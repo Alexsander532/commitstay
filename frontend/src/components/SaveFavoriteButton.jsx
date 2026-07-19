@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { checkFavorite, toggleFavorite } from "../api/endpoints";
 
 export default function SaveFavoriteButton({ propertyId, user, className = "" }) {
@@ -35,12 +35,21 @@ export default function SaveFavoriteButton({ propertyId, user, className = "" })
 
   if (user?.role === "host") return null;
 
+  const navigate = useNavigate();
+
   if (!user) {
     return (
-      <Link to="/login" className={`save-btn save-btn--guest ${className}`} title="Entre para salvar">
+      <span
+        className={`save-btn save-btn--guest ${className}`}
+        role="link"
+        tabIndex={0}
+        onClick={() => navigate("/login")}
+        onKeyDown={(e) => { if (e.key === "Enter") navigate("/login"); }}
+        title="Entre para salvar"
+      >
         <HeartIcon filled={false} />
         <span>Salvar</span>
-      </Link>
+      </span>
     );
   }
 

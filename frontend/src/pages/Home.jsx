@@ -1,13 +1,46 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listProperties } from "../api/endpoints";
 import MapView from "../components/MapView";
 import PropertyCard from "../components/PropertyCard";
 import PropertyCarousel from "../components/PropertyCarousel";
 import SearchBar from "../components/SearchBar";
 import { useAuth } from "../context/AuthContext";
+import { resolveSearchDates } from "../components/SearchWhenPopover";
+
+function toApiFilters(filters) {
+  const resolved = resolveSearchDates(filters);
+  const params = {
+    city: resolved.city,
+    check_in: resolved.check_in,
+    check_out: resolved.check_out,
+    guests: resolved.guests,
+    min_price: resolved.min_price,
+    max_price: resolved.max_price,
+  };
+  return Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== "" && v != null)
+  );
+}
 
 function hasActiveFilters(filters) {
-  return Object.values(filters).some((v) => v !== "" && v != null);
+  const {
+    city,
+    check_in,
+    check_out,
+    guests,
+    min_price,
+    max_price,
+    date_mode,
+    flex_duration,
+    flex_month,
+  } = filters;
+  if (city) return true;
+  if (guests) return true;
+  if (min_price) return true;
+  if (max_price) return true;
+  if (check_in || check_out) return true;
+  if (date_mode === "flexible" && flex_duration && flex_month) return true;
+  return false;
 }
 
 function groupByCity(properties) {
@@ -64,6 +97,11 @@ export default function Home() {
   const [view, setView] = useState("list");
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(1);
+  const [mapProperties, setMapProperties] = useState([]);
+  const [mapLoading, setMapLoading] = useState(false);
+
+  // Guard contra re-execução do fetchAllProperties (ex: React StrictMode)
+  const initialFetchDone = useRef(false);
 
   const searching = hasActiveFilters(filters);
 
@@ -72,14 +110,15 @@ export default function Home() {
     setError(null);
 
     if (searching) {
-      listProperties({ ...filters, page })
+      listProperties({ ...toApiFilters(filters), page })
         .then((data) => {
           setProperties(data.results);
           setCount(data.count);
         })
         .catch(() => setError("Não foi possível carregar os imóveis. O backend está rodando?"))
         .finally(() => setLoading(false));
-    } else {
+    } else if (!initialFetchDone.current) {
+      initialFetchDone.current = true;
       fetchAllProperties()
         .then((all) => {
           setAllProperties(all);
@@ -87,8 +126,26 @@ export default function Home() {
         })
         .catch(() => setError("Não foi possível carregar os imóveis. O backend está rodando?"))
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, [filters, page, searching]);
+
+  useEffect(() => {
+    if (view !== "map") return;
+
+    if (!searching) {
+      setMapProperties(allProperties);
+      setMapLoading(false);
+      return;
+    }
+
+    setMapLoading(true);
+    fetchAllProperties(toApiFilters(filters))
+      .then((all) => setMapProperties(all))
+      .catch(() => setError("Não foi possível carregar os imóveis no mapa."))
+      .finally(() => setMapLoading(false));
+  }, [filters, searching, view, allProperties]);
 
   const totalPages = Math.ceil(count / 12);
   const citySections = groupByCity(allProperties);
@@ -96,6 +153,12 @@ export default function Home() {
     .filter((p) => p.avg_rating >= 4.5)
     .sort((a, b) => b.avg_rating - a.avg_rating || b.review_count - a.review_count)
     .slice(0, 12);
+
+  const resultLabel = loading
+    ? "Carregando…"
+    : searching
+      ? `${count} imóve${count === 1 ? "l" : "is"} encontrado${count === 1 ? "" : "s"}`
+      : `${count} imóve${count === 1 ? "l" : "is"} disponíve${count === 1 ? "l" : "is"}`;
 
   return (
     <main className={searching ? "container" : "home-page"}>
@@ -108,22 +171,20 @@ export default function Home() {
         />
       </div>
 
-      {searching && (
+      {!loading && !error && (
         <div className="container">
-          <div className="results-bar">
-            <span>
-              {loading
-                ? "Buscando…"
-                : `${count} imóve${count === 1 ? "l" : "is"} encontrado${count === 1 ? "" : "s"}`}
-            </span>
+          <div className="results-bar home-results-bar">
+            <span>{resultLabel}</span>
             <div className="view-toggle">
               <button
+                type="button"
                 className={view === "list" ? "active" : ""}
                 onClick={() => setView("list")}
               >
                 ☰ Lista
               </button>
               <button
+                type="button"
                 className={view === "map" ? "active" : ""}
                 onClick={() => setView("map")}
               >
@@ -142,49 +203,58 @@ export default function Home() {
 
       {loading && <div className="loading">Carregando imóveis…</div>}
 
-      {!loading && !error && searching && properties.length === 0 && (
+      {!loading && !error && searching && properties.length === 0 && view === "list" && (
         <div className="container empty-state">
           <h3>Nenhum imóvel encontrado</h3>
           <p>Tente ajustar os filtros de busca.</p>
         </div>
       )}
 
-      {!loading && !error && searching && (
-        <div className="container">
-          {view === "map" ? (
-            <MapView properties={properties} />
+      {!loading && !error && view === "map" && (
+        <div className="container home-map-section">
+          {mapLoading ? (
+            <div className="loading">Carregando mapa com todos os imóveis…</div>
+          ) : mapProperties.length === 0 ? (
+            <div className="empty-state">
+              <h3>Nenhum imóvel no mapa</h3>
+              <p>Tente ajustar os filtros de busca.</p>
+            </div>
           ) : (
-            <>
-              <div className="property-grid">
-                {properties.map((p) => (
-                  <PropertyCard key={p.id} property={p} user={user} />
-                ))}
-              </div>
-              {totalPages > 1 && (
-                <div className="results-bar" style={{ justifyContent: "center", paddingBottom: 48 }}>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage(page - 1)}
-                  >
-                    ← Anterior
-                  </button>
-                  <span>Página {page} de {totalPages}</span>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage(page + 1)}
-                  >
-                    Próxima →
-                  </button>
-                </div>
-              )}
-            </>
+            <MapView properties={mapProperties} />
           )}
         </div>
       )}
 
-      {!loading && !error && !searching && (
+      {!loading && !error && view === "list" && searching && (
+        <div className="container">
+          <div className="property-grid">
+            {properties.map((p) => (
+              <PropertyCard key={p.id} property={p} user={user} />
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div className="results-bar" style={{ justifyContent: "center", paddingBottom: 48 }}>
+              <button
+                className="btn btn-outline btn-sm"
+                disabled={page <= 1}
+                onClick={() => setPage(page - 1)}
+              >
+                ← Anterior
+              </button>
+              <span>Página {page} de {totalPages}</span>
+              <button
+                className="btn btn-outline btn-sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage(page + 1)}
+              >
+                Próxima →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && view === "list" && !searching && (
         <div className="home-sections">
           {topRated.length >= 4 && (
             <PropertyCarousel

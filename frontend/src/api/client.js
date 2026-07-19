@@ -1,5 +1,42 @@
 const BASE_URL = "http://localhost:8000/api";
 
+// ── Cache de requisições com deduplicação ──
+// Impede que requisições idênticas simultâneas batam na API múltiplas vezes.
+// Cada URL+opções vira uma chave; enquanto a Promise estiver pendente,
+// chamadas subsequentes recebem a mesma Promise.
+const _pending = new Map();
+const _ttl = 30_000; // 30s de cache após resolver
+
+function _cacheKey(path, { method = "GET", body, auth = true } = {}) {
+  return `${method}:${auth}:${path}:${body ? JSON.stringify(body) : ""}`;
+}
+
+function _withCache(key, factory) {
+  const now = Date.now();
+  const cached = _pending.get(key);
+  if (cached && cached.expires > now) {
+    return cached.promise;
+  }
+  // Remove stale entry
+  if (cached) _pending.delete(key);
+
+  const promise = factory()
+    .then((result) => {
+      // Mantém no cache por _ttl após resolver
+      const entry = _pending.get(key);
+      if (entry) entry.expires = Date.now() + _ttl;
+      return result;
+    })
+    .catch((err) => {
+      // Remove do cache em caso de erro para permitir retry
+      _pending.delete(key);
+      throw err;
+    });
+
+  _pending.set(key, { promise, expires: Infinity });
+  return promise;
+}
+
 function getTokens() {
   try {
     return JSON.parse(localStorage.getItem("tokens")) || null;
@@ -41,27 +78,32 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = "GET", body, auth = true } = {}) {
-  const doFetch = async (token) => {
-    const headers = { "Content-Type": "application/json" };
-    if (auth && token) headers.Authorization = `Bearer ${token}`;
-    return fetch(`${BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  };
+export async function api(path, options = {}) {
+  const key = _cacheKey(path, options);
+  return _withCache(key, async () => {
+    const { method = "GET", body, auth = true } = options;
 
-  let token = getTokens()?.access;
-  let resp = await doFetch(token);
+    const doFetch = async (token) => {
+      const headers = { "Content-Type": "application/json" };
+      if (auth && token) headers.Authorization = `Bearer ${token}`;
+      return fetch(`${BASE_URL}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    };
 
-  if (resp.status === 401 && auth && getTokens()?.refresh) {
-    token = await refreshAccess();
-    if (token) resp = await doFetch(token);
-  }
+    let token = getTokens()?.access;
+    let resp = await doFetch(token);
 
-  if (resp.status === 204) return null;
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) throw new ApiError(resp.status, data);
-  return data;
+    if (resp.status === 401 && auth && getTokens()?.refresh) {
+      token = await refreshAccess();
+      if (token) resp = await doFetch(token);
+    }
+
+    if (resp.status === 204) return null;
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) throw new ApiError(resp.status, data);
+    return data;
+  });
 }

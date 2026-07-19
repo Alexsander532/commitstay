@@ -28,6 +28,9 @@ Autenticação: `Authorization: Bearer <access_token>` (JWT).
 | GET | `properties/mine/` | host | Imóveis do anfitrião logado (inclui inativos) |
 | GET | `amenities/` | — | Catálogo de comodidades |
 
+> Os endpoints de **favoritos** (`/api/favorites/`) estão documentados na
+> seção **Favoritos** mais abaixo.
+
 ### Query params de `GET properties/`
 | Param | Tipo | Efeito |
 |-------|------|--------|
@@ -37,6 +40,36 @@ Autenticação: `Authorization: Bearer <access_token>` (JWT).
 | `min_price`, `max_price` | decimal | Faixa de `price_per_night` |
 | `ordering` | string | `-avg_rating` (default), `price_per_night`, `-price_per_night`, `-created_at` |
 | `page` | int | Paginação (12/página) |
+
+## Favoritos — `/api/favorites/`
+
+> Disponível apenas para hóspedes (`role=guest`). O par (usuário, imóvel) é
+> único — não é possível favoritar o mesmo imóvel duas vezes.
+
+| Método | Rota | Auth | Descrição |
+|--------|------|------|----------|
+| GET | `favorites/` | guest | Lista os imóveis favoritados (devolve imóveis no formato de listagem) |
+| POST | `favorites/` | guest | Salva um favorito. Body: `{property}` (não repete se já existir) |
+| DELETE | `favorites/{id}/` | guest | Remove um favorito pelo seu ID |
+| GET | `favorites/check/{property_id}/` | guest | Verifica se o imóvel está favoritado → `{is_favorited: bool}` |
+| POST | `favorites/toggle/` | guest | Alterna favorito (salva se não existe; remove se existe). Body: `{property}` → `{is_favorited: bool}` |
+
+### Exemplo — alternar favorito
+```http
+POST /api/favorites/toggle/
+Authorization: Bearer <token-de-hospede>
+Content-Type: application/json
+
+{ "property": 3 }
+```
+Resposta `201` (acabou de salvar):
+```json
+{ "is_favorited": true }
+```
+Resposta `200` (acabou de remover):
+```json
+{ "is_favorited": false }
+```
 
 ## Reservas — `/api/bookings/`
 

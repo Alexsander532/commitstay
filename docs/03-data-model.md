@@ -7,9 +7,11 @@ erDiagram
     USER ||--o{ PROPERTY : "possui (host)"
     USER ||--o{ BOOKING : "solicita (guest)"
     USER ||--o{ REVIEW : "escreve"
+    USER ||--o{ FAVORITE : "salva"
     PROPERTY ||--o{ PHOTO : "tem"
     PROPERTY }o--o{ AMENITY : "oferece"
     PROPERTY ||--o{ BOOKING : "recebe"
+    PROPERTY ||--o{ FAVORITE : "é favoritado por"
     BOOKING |o--o| REVIEW : "gera"
 
     USER {
@@ -69,6 +71,13 @@ erDiagram
         text comment
         datetime created_at
     }
+    FAVORITE {
+        int id PK
+        int user_id FK
+        int property_id FK
+        datetime created_at
+        "unique(user, property)"
+    }
 ```
 
 ## Entidades
@@ -111,6 +120,19 @@ Propriedades derivadas: `avg_rating`, `review_count` (annotate).
 
 ### Review (`properties.Review`)
 Uma por reserva (`OneToOne booking`); só após check-out de reserva aprovada; `rating` 1–5.
+
+### Favorite (`properties.Favorite`)
+Imóvel salvo por um hóspede (lista de desejos).
+
+| Campo | Tipo | Regras |
+|-------|------|--------|
+| user | FK User | hóspede (`role=guest`) |
+| property | FK Property | deve estar ativo (`is_active=True`) |
+| created_at | DateTime | auto |
+
+Restrição: par **único** (`unique_together = [("user", "property")]`) — não
+dá para favoritar o mesmo imóvel duas vezes. O endpoint `toggle` alterna
+(salvar/remove) em uma única chamada.
 
 ## Máquina de estados da reserva
 

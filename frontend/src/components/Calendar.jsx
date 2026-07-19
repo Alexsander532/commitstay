@@ -66,6 +66,7 @@ export default function Calendar({
   onSelect,
   readOnly = false,
   months = 1,
+  hideFooter = false,
 }) {
   const [viewDate, setViewDate] = useState(() => {
     const d = new Date();
@@ -168,11 +169,13 @@ export default function Calendar({
         })}
       </div>
 
-      <div className="calendar-footer">
-        <button type="button" className="calendar-clear" onClick={clearDates}>
-          Limpar datas
-        </button>
-      </div>
+      {!hideFooter && (
+        <div className="calendar-footer">
+          <button type="button" className="calendar-clear" onClick={clearDates}>
+            Limpar datas
+          </button>
+        </div>
+      )}
     </div>
   );
 }

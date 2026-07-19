@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { checkFavorite, toggleFavorite } from "../api/endpoints";
 
 export default function CardFavoriteButton({ propertyId, user }) {
@@ -34,17 +34,21 @@ export default function CardFavoriteButton({ propertyId, user }) {
 
   if (user?.role === "host") return null;
 
+  const navigate = useNavigate();
+
   if (!user) {
     return (
-      <Link
-        to="/login"
+      <span
         className="pc-save-btn"
-        onClick={(e) => e.stopPropagation()}
+        role="link"
+        tabIndex={0}
+        onClick={(e) => { e.stopPropagation(); e.preventDefault(); navigate("/login"); }}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); e.preventDefault(); navigate("/login"); } }}
         title="Entre para salvar"
         aria-label="Entre para salvar"
       >
         <HeartIcon filled={false} />
-      </Link>
+      </span>
     );
   }
 
